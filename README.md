@@ -70,3 +70,228 @@ java -Dserver.port=8080 \
 控制台收到客户端心跳包之后，会在左侧导航栏中显示该客户端信息。如果控制台能够看到客户端的机器信息，则表明客户端接入成功了。
 
 更多：[控制台功能介绍](./Sentinel_Dashboard_Feature.md)。
+
+## sentinel-dashboard 部署
+环境变量
+```
+TZ	Asia/Shanghai
+SERVER_PORT	8858
+NACOS_USERNAME	nacos
+NACOS_SERVER_ADDR	xxxxxxxxxxx
+NACOS_PASSWORD	xxxxxxxxx
+NACOS_CONFIG_NAMESPACE	xxxxxxxxxx
+AUTH_USERNAME	xxxxxxxxxxxx
+AUTH_PASSWORD	xxxxxxxx
+```
+
+## 网关接入
+配置文件
+```yaml
+sentinel:
+  nacos:
+    username: xxxxxxxxxxxxxxx
+    password: xxxxxxxxxxxxxxxxx
+    server-addr: xxxxxxxxxxx
+    group: xxxxxxxxxx
+    namespace: xxxxxxxxxxxx
+
+
+spring:
+  cloud:
+    sentinel:
+      eager: true
+      transport:
+        port: 8719
+        dashboard: xxxxxxxxxxxxxxxxxxxxxxxxx:8858
+      #        dashboard: 127.0.0.1:8858
+      datasource:
+        ds1:
+          nacos:
+            server-addr: ${sentinel.nacos.server-addr}
+            namespace: ${sentinel.nacos.namespace}
+            data-id: ${spring.application.name}-gateway-flow-rules
+            group-Id: ${sentinel.nacos.group}
+            rule-type: gw-flow
+            data-type: json
+            username: ${sentinel.nacos.username}
+            password: ${sentinel.nacos.password}
+        ds2:
+          nacos:
+            server-addr: ${sentinel.nacos.server-addr}
+            namespace: ${sentinel.nacos.namespace}
+            data-id: ${spring.application.name}-gateway-api-rules
+            group-Id: ${sentinel.nacos.group}
+            rule-type: gw-api-group
+            data-type: json
+            username: ${sentinel.nacos.username}
+            password: ${sentinel.nacos.password}
+        ds3:
+          nacos:
+            server-addr: ${sentinel.nacos.server-addr}
+            namespace: ${sentinel.nacos.namespace}
+            data-id: ${spring.application.name}-degrade-rules
+            group-Id: ${sentinel.nacos.group}
+            rule-type: degrade
+            data-type: json
+            username: ${sentinel.nacos.username}
+            password: ${sentinel.nacos.password}
+        ds4:
+          nacos:
+            server-addr: ${sentinel.nacos.server-addr}
+            namespace: ${sentinel.nacos.namespace}
+            data-id: ${spring.application.name}-system-rules
+            group-Id: ${sentinel.nacos.group}
+            rule-type: system
+            data-type: json
+            username: ${sentinel.nacos.username}
+            password: ${sentinel.nacos.password}
+
+feign:
+  sentinel:
+    enabled: true
+```
+```java
+
+import com.alibaba.cloud.sentinel.SentinelProperties;
+import com.alibaba.cloud.sentinel.datasource.config.DataSourcePropertiesConfiguration;
+import com.alibaba.cloud.sentinel.datasource.config.NacosDataSourceProperties;
+import com.alibaba.csp.sentinel.adapter.gateway.common.api.ApiDefinition;
+import com.alibaba.csp.sentinel.adapter.gateway.common.api.GatewayApiDefinitionManager;
+import com.alibaba.csp.sentinel.adapter.gateway.common.rule.GatewayFlowRule;
+import com.alibaba.csp.sentinel.adapter.gateway.common.rule.GatewayRuleManager;
+import com.alibaba.csp.sentinel.adapter.gateway.sc.SentinelGatewayFilter;
+import com.alibaba.csp.sentinel.adapter.gateway.sc.exception.SentinelGatewayBlockExceptionHandler;
+import com.alibaba.csp.sentinel.datasource.ReadableDataSource;
+import com.alibaba.csp.sentinel.datasource.nacos.NacosDataSource;
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.TypeReference;
+import com.alibaba.nacos.api.PropertyKeyConst;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.cloud.gateway.filter.GlobalFilter;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
+import org.springframework.http.codec.ServerCodecConfigurer;
+import org.springframework.web.reactive.result.view.ViewResolver;
+
+import javax.annotation.PostConstruct;
+import java.util.*;
+
+@Slf4j
+@Configuration
+@EnableConfigurationProperties(SentinelProperties.class)
+public class SentinelGatewayConfiguration {
+
+    private final List<ViewResolver> viewResolvers;
+    private final ServerCodecConfigurer serverCodecConfigurer;
+
+    public SentinelGatewayConfiguration(ObjectProvider<List<ViewResolver>> viewResolversProvider,
+                                        ServerCodecConfigurer serverCodecConfigurer) {
+        this.viewResolvers = viewResolversProvider.getIfAvailable(Collections::emptyList);
+        this.serverCodecConfigurer = serverCodecConfigurer;
+    }
+
+    @Bean
+    @Order(Ordered.HIGHEST_PRECEDENCE)
+    public SentinelGatewayBlockExceptionHandler sentinelGatewayBlockExceptionHandler() {
+        // Register the block exception handler for Spring Cloud Gateway.
+        return new SentinelGatewayBlockExceptionHandler(viewResolvers, serverCodecConfigurer);
+    }
+
+    @Bean
+    @Order(-1)
+    public GlobalFilter sentinelGatewayFilter() {
+        return new SentinelGatewayFilter();
+    }
+
+    @Autowired
+    private SentinelProperties nacosProperties;
+
+    private final String groupId = "SENTINEL_GROUP";
+
+    public static final String PARAM_FLOW_POSTFIX = "-param-rules";
+    public static final String FLOW_DATA_ID_POSTFIX = "-flow-rules";
+    public static final String DEGRADE_DATA_ID_POSTFIX = "-degrade-rules";
+    public static final String SYSTEM_FULE_DATA_ID_POSTFIX = "-system-rules";
+    public static final String AUTHORITY_DATA_ID_POSTFIX = "-authority-rules";
+    public static final String GATEWAY_FLOW_DATA_ID_POSTFIX = "-gateway-flow-rules";
+    public static final String GATEWAY_API_DATA_ID_POSTFIX = "-gateway-api-rules";
+    public static final String DASHBOARD_POSTFIX = "-dashboard";
+
+    public static final String PARAM_FLOW_DATA_ID_POSTFIX = "-param-rules";
+    public static final String CLUSTER_MAP_DATA_ID_POSTFIX = "-cluster-map";
+
+
+    @Value("${spring.application.name}")
+    private String applicationName;
+
+    @Value("${spring.application.name}"+ GATEWAY_FLOW_DATA_ID_POSTFIX)
+    private String flowDataId;
+
+    @Value("${spring.application.name}"+ GATEWAY_API_DATA_ID_POSTFIX)
+    private String apiDataId;
+
+    @Value("${spring.application.name}"+ PARAM_FLOW_POSTFIX)
+    private String paramDataId;
+
+    @Value("${spring.application.name}"+"-cluster-client-config")
+    private String configDataId;
+
+    private final String namespaceSetDataId = "cluster-server-namespace-set";
+    private final String serverTransportDataId = "cluster-server-transport-config";
+
+
+    @PostConstruct
+    public void init(){
+        NacosDataSourceProperties nacosDataSourceProperties = this.nacosProperties.getDatasource()
+                .values()
+                .stream()
+                .filter(e -> e.getNacos() != null)
+                .findFirst()
+                .map(DataSourcePropertiesConfiguration::getNacos)
+                .orElseThrow(() -> new IllegalStateException("缺少sentinel的NACOS配置"));
+
+        Properties properties = new Properties();
+        Optional.ofNullable(nacosDataSourceProperties.getEndpoint())
+                .ifPresent(e->{properties.setProperty(PropertyKeyConst.ENDPOINT,e);});
+        Optional.ofNullable(nacosDataSourceProperties.getNamespace())
+                .ifPresent(e->{properties.put(PropertyKeyConst.NAMESPACE,e);});
+        Optional.ofNullable(nacosDataSourceProperties.getUsername())
+                .ifPresent(e->{properties.put(PropertyKeyConst.USERNAME,e);});
+        Optional.ofNullable(nacosDataSourceProperties.getPassword())
+                .ifPresent(e->{properties.put(PropertyKeyConst.PASSWORD,e);});
+        Optional.ofNullable(nacosDataSourceProperties.getAccessKey())
+                .ifPresent(e->{properties.put(PropertyKeyConst.ACCESS_KEY,e);});
+        Optional.ofNullable(nacosDataSourceProperties.getSecretKey())
+                .ifPresent(e->{properties.put(PropertyKeyConst.SECRET_KEY,e);});
+        Optional.ofNullable(nacosDataSourceProperties.getServerAddr())
+                .ifPresent(e->{properties.put(PropertyKeyConst.SERVER_ADDR,e);});
+//        initUseClusterTokenServer(properties);
+        initEmbed(properties);
+        log.info("sentinel gateway 配置已加载");
+    }
+
+
+    public void initEmbed(Properties properties){
+        // Register client dynamic rule data source.
+        initDynamicRuleProperty(properties);
+    }
+
+
+    private void initDynamicRuleProperty(Properties properties) {
+        ReadableDataSource<String, Set<GatewayFlowRule>> ruleSource = new NacosDataSource<>(properties, groupId,
+                flowDataId, source -> JSON.parseObject(source, new TypeReference<Set<GatewayFlowRule>>() {}));
+
+        ReadableDataSource<String, Set<ApiDefinition>> apiDefinitionSource = new NacosDataSource<>(properties, groupId,
+                apiDataId, source -> JSON.parseObject(source, new TypeReference<Set<ApiDefinition>>() {}));
+
+        GatewayRuleManager.register2Property(ruleSource.getProperty());
+        GatewayApiDefinitionManager.register2Property(apiDefinitionSource.getProperty());
+    }
+}
+```
