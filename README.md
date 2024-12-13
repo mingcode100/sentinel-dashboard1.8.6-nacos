@@ -1,4 +1,7 @@
 # 前言
+
+从 https://github.com/max-holo/sentinel-dashboard1.8.6-nacos fork而来，增加了docker支持
+
 ## 改造后效果
 
 支持使用nacos作为动态数据源的规则设置，支持流控规则、熔断规则、热点规则、系统规则、授权规则、网关API分组规则、网关流控规则
