@@ -41,6 +41,11 @@
 
     <dependencies>
         <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>1.18.36</version>
+        </dependency>
+        <dependency>
             <groupId>com.alibaba.csp</groupId>
             <artifactId>sentinel-core</artifactId>
             <version>${project.version}</version>
@@ -203,6 +208,38 @@
                 <version>${maven.deploy.version}</version>
                 <configuration>
                     <skip>true</skip>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>com.spotify</groupId>
+                <artifactId>dockerfile-maven-plugin</artifactId>
+                <version>1.4.9</version>
+                <!-- 运行mvn 打包命令时会自动打包镜像并推送  -->
+                <executions>
+                    <!--<execution>
+                        <id>default</id>
+                        <goals>
+                            <goal>build</goal>
+                            <goal>push</goal>
+                        </goals>
+                    </execution>-->
+                </executions>
+                <configuration>
+
+                    <skip>${dockerfile.skip}</skip>
+                    <!-- 测试推送到docker hub的仓库 -->
+                    <repository>hub-tx.dianzhenkeji.com/arch/sentinel-dashboard-nacos</repository>
+                    <tag>${project.version}</tag>
+                    <useMavenSettingsForAuth>true</useMavenSettingsForAuth>
+
+                    <!-- 从master/target目录build  -->
+                    <buildDirectory>${session.executionRootDirectory}/target/</buildDirectory>
+
+                    <!-- 这个是你要在dockerfile里使用的maven变量，在此处配置后可在dockerfile里使用该 变量 -->
+                    <buildArgs>
+                        <JAR_FILE>target/${project.build.finalName}.jar</JAR_FILE>
+                        <PROJECT_NAME>${project.name}</PROJECT_NAME>
+                    </buildArgs>
                 </configuration>
             </plugin>
         </plugins>
